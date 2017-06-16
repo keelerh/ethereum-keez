@@ -1,22 +1,23 @@
 /**
  * Dependencies
  */
-const { spawnSync } = require('child_process')
+const { JWD } = require('@trust/jose')
+const keyto = require('@trust/keyto')
+const crypto = require('@trust/webcrypto')
+const TestRPC = require('ethereumjs-testrpc')
 const Tx = require('ethereumjs-tx')
 const Web3 = require('web3');
 
-let bashScript = "openssl ecparam -name secp256k1 -genkey -noout | openssl ec -text -noout"
-let output = spawnSync('sh', ['-c', bashScript]).stdout
-let keypair = output.toString().replace(/\s/g,'')
 
-let a = keypair.split('priv:')[1]
-let b = a.split('pub:')[0]
-let c = b.replace(/^0+/, '')
-let privateKey = c.replace(/:/g, '') 
+//web3.setProvider(new web3.providers.HttpProvider('http://localhost:8545'))
 
-console.log('Private key:\n', privateKey)
+let publicKey
+let privateKey
 
-let rawTx = {
+let payload = { iss: 'https://example.com', exp: 123456789, iat: 123456789 }
+let header = { typ: 'JWS', alg: 'KS256' }
+
+let dummyRawTx = {
   nonce: '0x00',
   gasPrice: '0x09184e72a000', 
   gasLimit: '0x2710',
@@ -25,15 +26,64 @@ let rawTx = {
   data: '0x7f7465737432000000000000000000000000000000000000000000000000000000600057'
 }
 
-let tx = new Tx(rawTx)
-tx.sign(new Buffer(privateKey, 'hex'))
+crypto.subtle
 
-let serializedTx = tx.serialize()
+  .generateKey(
+      
+    // use WebCrypto to generate new ECDSA secp256k1 keypair
+      
+    {
+      name: 'ECDSA',
+      namedCurve: 'K-256',
+      hash: { name: 'SHA-256' }
+    },
+    true,
+    ['sign', 'verify']
+  )
 
-console.log('Serialized Ethereum tx:')
-console.log(serializedTx.toString('hex'))
+  .then(keypair => {
+    publicKey = keypair.publicKey
+    privateKey = keypair.privateKey
+    return JWD.encode({ signatures: [{ protected: header, cryptoKey: privateKey }], payload }, { serialization: 'document' })
+  })
 
-let web3 = new Web3()
-web3.setProvider('http://localhost:8545')
+  .then(token => {
+    console.log(JSON.stringify(token, null, 2))
+    return JWD.verify({ cryptoKey: publicKey, serialized: token, result: 'instance' })
+  })
 
-web3.eth.sendRawTransaction(serializedTx.toString('hex'))
+  .then( => {
+
+    // convert PEM private key to hex string
+      
+    let signingKey = privateKey.handle
+    let Key = keyto.from(signingKey, 'pem')
+    return Key.toString('blk', 'private')
+  })
+  
+  .then(secretKey => {
+      
+    // start testrpc Ethereum client
+      
+    let web3 = new Web3()
+    web3.setProvider(TestRPC.provider(
+        {
+          accounts: {
+                      secretKey: secretKey,
+                      balance: 1000  // fund newly generated account
+                    }
+        }
+    ))
+
+    // sign Ethereum tx
+
+    let tx = new Tx(dummyRawTx)
+    tx.sign(new Buffer(privateKey, 'hex'))
+    let serializedTx = tx.serialize()
+
+    // deploy Ethereum tx to the network
+      
+    web3.eth.sendRawTransaction(serializedTx.toString('hex'))
+  })
+
+  .catch(console.log)

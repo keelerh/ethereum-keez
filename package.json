@@ -1,7 +1,11 @@
 {
   "dependencies": {
+    "@trust/jose": "^0.2.3",
+    "@trust/keyto": "^0.3.0",
+    "@trust/webcrypto": "^0.2.1",
     "crypto-js": "^3.1.9-1",
     "elliptic": "^6.4.0",
+    "ethereumjs-testrpc": "^3.0.2",
     "ethereumjs-tx": "^1.2.5",
     "json-loader": "^0.5.4",
     "mkdirp": "^0.5.1",
