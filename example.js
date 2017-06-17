@@ -8,10 +8,10 @@ const TestRPC = require('ethereumjs-testrpc')
 const Tx = require('ethereumjs-tx')
 const Web3 = require('web3');
 
-
 let publicKey
 let privateKey
 let secretKey
+let web3
 
 let payload = { iss: 'https://example.com', exp: 123456789, iat: 123456789 }
 let header = { typ: 'JWS', alg: 'KS256' }
@@ -75,7 +75,7 @@ crypto.subtle
       
     // start testrpc Ethereum client
       
-    let web3 = new Web3()
+    web3 = new Web3()
     web3.setProvider(TestRPC.provider({
       accounts: [{
           secretKey: '0x' + secretKey,
@@ -96,10 +96,37 @@ crypto.subtle
 
     // deploy Ethereum tx to the network
     
-    web3.eth.sendRawTransaction(serializedTx.toString('hex'), function(err, txHash) {
-      if (!err)
-        console.log('Ethereum tx hash: ', txHash)
+    return new Promise((resolve, reject) => {
+        web3.eth.sendRawTransaction(serializedTx.toString('hex'), (err, txHash) => {
+          if (err) {
+            console.error(err)
+            reject(err)
+          } else {
+            resolve(txHash)
+          }
+        })
     })
+  })
+
+  .then(txHash => {
+    let blockFilter = web3.eth.filter('latest');
+    return new Promise((resolve, reject) => {
+      blockFilter.watch( () => {
+        web3.eth.getTransactionReceipt(txHash, (err, receipt) => {
+          if (err) {
+            reject(err);
+          }
+          if (receipt) {
+            blockFilter.stopWatching();
+            resolve(receipt);
+          }
+        });
+      });
+    });
+  })
+
+  .then(receipt => {
+      console.log(receipt)
   })
 
   .catch(console.log)
